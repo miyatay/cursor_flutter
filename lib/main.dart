@@ -219,6 +219,39 @@ class StreamingChatMessage extends StatefulWidget {
 }
 
 class _StreamingChatMessageState extends State<StreamingChatMessage> {
+  String _lastValue = ''; // 最後の値を保持する変数を追加
+
+  @override
+  void initState() {
+    super.initState();
+    widget.stream.listen(
+      (data) {
+        setState(() {
+          _lastValue = data;
+        });
+        print('### streaming data: $data');
+      },
+      onDone: () {
+        print('### streaming done');
+        if (!mounted) return;
+
+        // ストリーム完了時に ChatMessage に変換
+        final parentState = context.findAncestorStateOfType<_ChatScreenState>();
+        if (parentState != null) {
+          final index = parentState._messages.indexOf(widget);
+          if (index != -1) {
+            parentState.setState(() {
+              parentState._messages[index] = ChatMessage(
+                text: _lastValue,
+                isUser: widget.isUser,
+              );
+            });
+          }
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     print('### build');
