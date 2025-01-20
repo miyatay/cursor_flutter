@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 
 void main() {
   runApp(const MyApp());
@@ -31,28 +33,57 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final List<Widget> _messages = [];
   final TextEditingController _textController = TextEditingController();
-  int _conversationCount = 0;
 
-  // AIの応答をシミュレートするストリーム
-  Stream<String> _simulateAIResponse() {
-    _conversationCount++;
+  // APIを呼び出してAIの応答を取得するストリーム
+  Stream<String> _getAIResponse(String userMessage) {
     final controller = StreamController<String>.broadcast();
-    final response = '$_conversationCount: こんにちは！お手伝いできることはありますか？';
-    
+    String buffer = '';
+
     Future(() async {
-      for (var i = 0; i < response.length; i++) {
-        try {
-          await Future.delayed(const Duration(milliseconds: 50));
-          if (!controller.isClosed) {  // コントローラーが閉じられていないことを確認
-            print('### add: ${response.length} $i');
-            controller.add(response.substring(0, i + 1));
+      try {
+        final request = http.Request('POST', Uri.parse('[URL]'));
+        request.headers.addAll({
+          'Authorization': 'Bearer [API_KEY]',
+          'Content-Type': 'application/json',
+        });
+        request.body = jsonEncode({
+          'inputs': {},
+          'query': userMessage,
+          'response_mode': 'streaming',
+          'conversation_id': '',
+          'user': 'abc-123'
+        });
+
+        final response = await http.Client().send(request);
+        if (response.statusCode == 200) {
+          await for (var chunk in response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+            if (chunk.startsWith('data: ')) {
+              final jsonStr = chunk.substring(6);
+              try {
+                final jsonData = jsonDecode(jsonStr);
+                if (jsonData['event'] == 'message') {
+                  final answer = jsonData['answer'] as String;
+                  buffer += answer;
+                  // 遅延を入れて段階的に表示
+                  await Future.delayed(const Duration(milliseconds: 10));
+                  controller.add(buffer);
+                } else if (jsonData['event'] == 'message_end') {
+                  break;
+                }
+              } catch (e) {
+                print('JSONパースエラー: $e');
+              }
+            }
           }
-        } catch (e) {
-          print('### error: $e');
-          // エラーが発生した場合は処理を中断
-          break;
+        } else {
+          controller.add('エラーが発生しました: ${response.statusCode}');
         }
-        }
+      } catch (e) {
+        controller.add('通信エラーが発生しました: $e');
+      }
+
       await controller.close();
     });
 
@@ -61,17 +92,21 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _handleSubmitted(String text) {
     if (text.trim().isEmpty) return;
-    
+
     _textController.clear();
     setState(() {
-      _messages.insert(0, ChatMessage(
-        text: text,
-        isUser: true,
-      ));
-      _messages.insert(0, StreamingChatMessage(
-        stream: _simulateAIResponse(),
-        isUser: false,
-      ));
+      _messages.insert(
+          0,
+          ChatMessage(
+            text: text,
+            isUser: true,
+          ));
+      _messages.insert(
+          0,
+          StreamingChatMessage(
+            stream: _getAIResponse(text), // シミュレーション関数の代わりにAPI呼び出しを使用
+            isUser: false,
+          ));
     });
   }
 
@@ -141,7 +176,8 @@ class ChatMessage extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isUser) ...[
             CircleAvatar(
@@ -183,44 +219,15 @@ class StreamingChatMessage extends StatefulWidget {
 }
 
 class _StreamingChatMessageState extends State<StreamingChatMessage> {
-  String _lastValue = '';  // 最後の値を保持する変数を追加
-
-  @override
-  void initState() {
-    super.initState();
-    widget.stream.listen(
-      (data) {
-        _lastValue = data;  // データを保持
-        print('### $data');
-      },
-      onDone: () {
-        print('### done ');
-        if (!mounted) return;
-        
-        final parentState = context.findAncestorStateOfType<_ChatScreenState>();
-        if (parentState != null) {
-          final index = parentState._messages.indexOf(widget);
-          print('### index: $index');
-          if (index != -1) {
-            parentState.setState(() {
-              parentState._messages[index] = ChatMessage(
-                text: _lastValue,  // 保持した値を使用
-                isUser: widget.isUser,
-              );
-            });
-          }
-        }
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    print('### build');
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment:
+            widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!widget.isUser) ...[
             CircleAvatar(
@@ -239,6 +246,8 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
               child: StreamBuilder<String>(
                 stream: widget.stream,
                 builder: (context, snapshot) {
+                  print(
+                      '### StreamBuilder: ${snapshot.connectionState} ${snapshot.data}');
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const SizedBox(
                       width: 20,
