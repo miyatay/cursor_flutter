@@ -22,6 +22,21 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Widget> _messages = [];
   final TextEditingController _textController = TextEditingController();
 
+  @override
+  void initState() {
+    super.initState();
+    // 初期表示時にrecordをqueryとして使用
+    if (widget.record.isNotEmpty) {
+      _messages.insert(
+        0,
+        StreamingChatMessage(
+          stream: _getAIResponse(widget.record),
+          isUser: false,
+        ),
+      );
+    }
+  }
+
   // APIを呼び出してAIの応答を取得するストリーム
   Stream<String> _getAIResponse(String userMessage) {
     final controller = StreamController<String>.broadcast();
