@@ -30,15 +30,23 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.insert(
         0,
         StreamingChatMessage(
-          stream: _getAIResponse(widget.record),
+          stream: _getAIResponseFirst(widget.nickname, widget.record),
           isUser: false,
         ),
       );
     }
   }
 
+
+  Stream<String> _getAIResponseFirst(String nickname, String record) {
+    return _getAIResponse('開始', nickname, record);
+  }
+  Stream<String> _getAIResponseSecond(String userMessage) {
+    return _getAIResponse(userMessage, '', '');
+  }
+
   // APIを呼び出してAIの応答を取得するストリーム
-  Stream<String> _getAIResponse(String userMessage) {
+  Stream<String> _getAIResponse(String userMessage, String nickname, String record) {
     final controller = StreamController<String>.broadcast();
     String buffer = '';
 
@@ -50,7 +58,11 @@ class _ChatScreenState extends State<ChatScreen> {
           'Content-Type': 'application/json',
         });
         request.body = jsonEncode({
-          'inputs': {},
+          'inputs': {
+            'record_nutirition': widget.record,
+            'isdebug': '0',
+            'nickname': widget.nickname,
+          },
           'query': userMessage,
           'response_mode': 'streaming',
           'conversation_id': '',
@@ -107,7 +119,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.insert(
           0,
           StreamingChatMessage(
-            stream: _getAIResponse(text), // シミュレーション関数の代わりにAPI呼び出しを使用
+            stream: _getAIResponseSecond(text), // シミュレーション関数の代わりにAPI呼び出しを使用
             isUser: false,
           ));
     });
