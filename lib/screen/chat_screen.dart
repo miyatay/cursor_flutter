@@ -21,6 +21,7 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final List<Widget> _messages = [];
   final TextEditingController _textController = TextEditingController();
+  String conversationId = '';
 
   @override
   void initState() {
@@ -65,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen> {
           },
           'query': userMessage,
           'response_mode': 'streaming',
-          'conversation_id': '',
+          'conversation_id': conversationId,
           'user': 'abc-123'
         });
 
@@ -85,6 +86,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   await Future.delayed(const Duration(milliseconds: 10));
                   controller.add(buffer);
                 } else if (jsonData['event'] == 'message_end') {
+                  conversationId = jsonData['conversation_id'];
                   break;
                 }
               } catch (e) {
