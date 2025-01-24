@@ -22,12 +22,14 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Widget> _messages = [];
   final TextEditingController _textController = TextEditingController();
   String conversationId = '';
+  int messageCount = 0;  // メッセージ送信回数を追加
+  static const int maxMessages = 5;  // 最大メッセージ数を定数で定義
 
   @override
   void initState() {
     super.initState();
-    // 初期表示時にrecordをqueryとして使用
     if (widget.record.isNotEmpty) {
+      messageCount++;  // 初期メッセージをカウント
       _messages.insert(
         0,
         StreamingChatMessage(
@@ -37,7 +39,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
-
 
   Stream<String> _getAIResponseFirst(String nickname, String record) {
     return _getAIResponse('開始', nickname, record);
@@ -84,7 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   buffer += answer;
                   // 遅延を入れて段階的に表示
                   await Future.delayed(const Duration(milliseconds: 10));
-                  controller.add(buffer);
+                  controller.add('$messageCount: $buffer'); // TODO デバッグ用に会話数を表示
                 } else if (jsonData['event'] == 'message_end') {
                   conversationId = jsonData['conversation_id'];
                   break;
@@ -95,10 +96,10 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         } else {
-          controller.add('エラーが発生しました: ${response.statusCode}');
+          controller.add('ERROR: エラーが発生しました: ${response.statusCode}');
         }
       } catch (e) {
-        controller.add('通信エラーが発生しました: $e');
+        controller.add('ERROR: 通信エラーが発生しました: $e');
       }
 
       await controller.close();
@@ -109,9 +110,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _handleSubmitted(String text) {
     if (text.trim().isEmpty) return;
+    if (messageCount >= maxMessages) return;  // 制限に達した場合は送信しない
 
     _textController.clear();
     setState(() {
+      messageCount++;  // メッセージをカウント
       _messages.insert(
           0,
           ChatMessage(
@@ -121,7 +124,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _messages.insert(
           0,
           StreamingChatMessage(
-            stream: _getAIResponseSecond(text), // シミュレーション関数の代わりにAPI呼び出しを使用
+            stream: _getAIResponseSecond(text),
             isUser: false,
           ));
     });
@@ -154,15 +157,17 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildTextComposer() {
+    final bool isEnabled = messageCount < maxMessages;  // 送信可能かどうかを判定
+
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: Row(
+      child: isEnabled ? Row(  // isEnabledがfalseの場合は何も表示しない
         children: [
           Flexible(
             child: TextField(
               controller: _textController,
               onSubmitted: _handleSubmitted,
-              decoration: const InputDecoration.collapsed(
+              decoration: const InputDecoration(
                 hintText: 'メッセージを入力してください',
               ),
             ),
@@ -172,7 +177,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onPressed: () => _handleSubmitted(_textController.text),
           ),
         ],
-      ),
+      ) : const SizedBox.shrink(),  // 非表示にする
     );
   }
 }
@@ -182,10 +187,12 @@ class ChatMessage extends StatelessWidget {
     super.key,
     required this.text,
     required this.isUser,
+    this.isError = false,  // エラー状態を追加
   });
 
   final String text;
   final bool isUser;
+  final bool isError;  // エラー状態
 
   @override
   Widget build(BuildContext context) {
@@ -193,8 +200,7 @@ class ChatMessage extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!isUser) ...[
             CircleAvatar(
@@ -207,10 +213,15 @@ class ChatMessage extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(12.0),
               decoration: BoxDecoration(
-                color: isUser ? Colors.blue[100] : Colors.grey[200],
+                color: isError ? Colors.red[50] : (isUser ? Colors.blue[100] : Colors.grey[200]),
                 borderRadius: BorderRadius.circular(16.0),
               ),
-              child: Text(text),
+              child: Text(
+                text,
+                style: TextStyle(
+                  color: isError ? Colors.red : null,
+                ),
+              ),
             ),
           ),
           if (isUser) const SizedBox(width: 8.0),
@@ -236,7 +247,8 @@ class StreamingChatMessage extends StatefulWidget {
 }
 
 class _StreamingChatMessageState extends State<StreamingChatMessage> {
-  String _lastValue = ''; // 最後の値を保持する変数を追加
+  String _lastValue = '';
+  bool _isError = false;  // エラー状態を追加
 
   @override
   void initState() {
@@ -246,13 +258,9 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
         setState(() {
           _lastValue = data;
         });
-        print('### streaming data: $data');
       },
       onDone: () {
-        print('### streaming done');
         if (!mounted) return;
-
-        // ストリーム完了時に ChatMessage に変換
         final parentState = context.findAncestorStateOfType<_ChatScreenState>();
         if (parentState != null) {
           final index = parentState._messages.indexOf(widget);
@@ -261,23 +269,42 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
               parentState._messages[index] = ChatMessage(
                 text: _lastValue,
                 isUser: widget.isUser,
+                isError: _lastValue.startsWith('ERROR:'),  // エラー状態を渡す
               );
             });
           }
         }
+      },
+      onError: (error) {
+        if (!mounted) return;
+        final parentState = context.findAncestorStateOfType<_ChatScreenState>();
+        if (parentState != null) {
+          final index = parentState._messages.indexOf(widget);
+          if (index != -1) {
+            parentState.setState(() {
+              parentState._messages[index] = ChatMessage(
+                text: 'エラーが発生しました: $error',
+                isUser: widget.isUser,
+                isError: true,
+              );
+            });
+          }
+        }
+        // setState(() {
+        //   _lastValue = 'エラーが発生しました: $error';
+        //   _isError = true;
+        // });
       },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    print('### build');
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 16.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: widget.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
         children: [
           if (!widget.isUser) ...[
             CircleAvatar(
@@ -290,14 +317,12 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
             child: Container(
               padding: const EdgeInsets.all(12.0),
               decoration: BoxDecoration(
-                color: widget.isUser ? Colors.blue[100] : Colors.grey[200],
+                color: _isError ? Colors.red[50] : (widget.isUser ? Colors.blue[100] : Colors.grey[200]),
                 borderRadius: BorderRadius.circular(16.0),
               ),
               child: StreamBuilder<String>(
                 stream: widget.stream,
                 builder: (context, snapshot) {
-                  print(
-                      '### StreamBuilder: ${snapshot.connectionState} ${snapshot.data}');
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const SizedBox(
                       width: 20,
@@ -305,7 +330,12 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     );
                   }
-                  return Text(snapshot.data ?? '');
+                  return Text(
+                    snapshot.data ?? '',
+                    style: TextStyle(
+                      color: _isError ? Colors.red : null,
+                    ),
+                  );
                 },
               ),
             ),
