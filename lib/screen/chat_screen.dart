@@ -305,7 +305,10 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     );
                   }
-                  return Text(snapshot.data ?? '');
+                  return Text(
+
+                      snapshot.data ?? ''
+                  );
                 },
               ),
             ),

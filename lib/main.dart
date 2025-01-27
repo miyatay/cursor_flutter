@@ -1,5 +1,6 @@
 import 'package:example/router/router.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 void main() {
   runApp(const MyApp());
@@ -18,6 +19,9 @@ class MyApp extends StatelessWidget {
         appBarTheme: const AppBarTheme(
           backgroundColor: Colors.white,
           elevation: 0,
+        ),
+        textTheme: GoogleFonts.notoColorEmojiTextTheme(
+          Theme.of(context).textTheme,
         ),
         useMaterial3: true,
       ),
