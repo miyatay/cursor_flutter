@@ -22,12 +22,14 @@ class _ChatScreenState extends State<ChatScreen> {
   final List<Widget> _messages = [];
   final TextEditingController _textController = TextEditingController();
   String conversationId = '';
+  int messageCount = 0;  // メッセージ送信回数を追加
+  static const int maxMessages = 5;  // 最大メッセージ数を定数で定義
 
   @override
   void initState() {
     super.initState();
-    // 初期表示時にrecordをqueryとして使用
     if (widget.record.isNotEmpty) {
+      messageCount++;  // 初期メッセージをカウント
       _messages.insert(
         0,
         StreamingChatMessage(
@@ -37,7 +39,6 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
   }
-
 
   Stream<String> _getAIResponseFirst(String nickname, String record) {
     return _getAIResponse('開始', nickname, record);
@@ -84,7 +85,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   buffer += answer;
                   // 遅延を入れて段階的に表示
                   await Future.delayed(const Duration(milliseconds: 10));
-                  controller.add(buffer);
+                  controller.add('$messageCount: $buffer'); // TODO デバッグ用に会話数を表示
                 } else if (jsonData['event'] == 'message_end') {
                   conversationId = jsonData['conversation_id'];
                   break;
@@ -95,10 +96,10 @@ class _ChatScreenState extends State<ChatScreen> {
             }
           }
         } else {
-          controller.add('エラーが発生しました: ${response.statusCode}');
+          controller.add('ERROR: エラーが発生しました: ${response.statusCode}');
         }
       } catch (e) {
-        controller.add('通信エラーが発生しました: $e');
+        controller.add('ERROR: 通信エラーが発生しました: $e');
       }
 
       await controller.close();
@@ -305,10 +306,7 @@ class _StreamingChatMessageState extends State<StreamingChatMessage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     );
                   }
-                  return Text(
-
-                      snapshot.data ?? ''
-                  );
+                  return Text(snapshot.data ?? '');
                 },
               ),
             ),
